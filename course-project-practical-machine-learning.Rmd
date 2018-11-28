@@ -1,0 +1,135 @@
+---
+title: "Practical Machine Learning"
+author: "Jani Savolainen"
+date: "28 November 2018"
+output:
+        html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+This report is part of the Coursera Practical Machine Learning course. My goal is to develope a model based on the Human Activity Recognition Weight Lifting data* to predict the type of exercise. I ended up using the Random Forest model. 
+
+# Extracting the data
+
+```{r}
+# download data file if it does not exist
+trainUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+trainFile <- "data/pml-training.csv"
+testFile <- "data/pml-testing.csv"
+
+if (!file.exists(trainFile)) {
+        download.file(trainUrl, trainFile, mode = "wb")
+}
+if (!file.exists(testFile)) {
+        download.file(testUrl, testFile, mode = "wb")
+}
+
+trainingData <- read.csv("data/pml-training.csv")
+testingData <- read.csv("data/pml-testing.csv")
+
+# load the needed libraries
+suppressMessages(library(caret))
+suppressMessages(library(rattle))
+library(rpart)
+
+# set seed to be able to reproduce
+set.seed(100)
+```
+
+## Exploring the data
+
+```{r}
+dim(trainingData)
+dim(testingData)
+
+str(trainingData)
+
+```
+
+There are 19622 observations and 160 columns on the data set. Data have a lot of NA's which is not valuable information, therefore we need to clean the data. Also we can get rid of the user-related information like user names and time stamps.
+
+```{r}
+rowsWithNA <- which(colSums(is.na(trainingData) |trainingData=="")>0.9*dim(trainingData)[1]) 
+
+cleanedTrainingData <- trainingData[,-rowsWithNA] # get rid of columns that have 90% or more NA's
+cleanedTrainingData <- cleanedTrainingData[,-c(1:7)] # get rid of user-related info
+
+dim(cleanedTrainingData)
+
+# data cleaning for the test set also
+
+rowsWithNAtest <- which(colSums(is.na(testingData) |testingData=="")>0.9*dim(testingData)[1]) 
+cleanedTestData <- testingData[,-rowsWithNAtest]
+
+dim(cleanedTestData)
+```
+
+# Training data slicing
+
+We need to split the training data to be able to examine out-of-sample errors.
+
+```{r}
+inTrain <- createDataPartition(cleanedTrainingData$classe,
+                               p=0.75, list=FALSE)
+useTrain <- cleanedTrainingData[inTrain, ]
+useTest <- cleanedTrainingData[-inTrain, ]
+```
+
+# Predicting model
+
+```{r}
+trControl <- trainControl(method="cv", number=5)
+```
+
+
+
+## Random forest
+
+```{r}
+fitRF <- train(classe ~ ., data = useTrain, method = "rf", trControl=trControl, verbose=FALSE)
+fitRF
+
+predictRF <- predict(fitRF, useTest) # predict using test set sliced from training data
+cMatrixRF <- confusionMatrix(useTest$classe, predictRF) #use confusion matrix to see prediction result
+cMatrixRF
+```
+
+As we can see from confusion matrix, the prediction accuracy of Random Forest is very high, 0.9931.  Therefore the out-of-sample error rate is 0.0069.
+
+Just a note for reprodusing that Random Forest model is heavy. I got stuck for a while because of the computation. Also, I tried to visualize the Random Forest with reprtree package but unfortunately the package installation does not work.
+
+## Classification tree
+
+```{r}
+fitDT <- rpart(classe ~ ., data=useTrain, method="class")
+fancyRpartPlot(fitDT)
+
+predictDT <- predict(fitDT, useTest, type = "class")
+cMatrixDT <- confusionMatrix(predictDT, useTest$classe)
+cMatrixDT
+```
+
+As we can see from confusion matrix, the prediction accuracy in Classification Tree is 0.7494, out-of-sample error 0.2506. Accuracy is lower than in Random Forest.
+
+# Model selection
+
+It seems that the Random Forest produces better model to predict the type of exercise than Classification tree. Accuracy of Random Forest is very high, 0.9931. To predict the type of exercise in the Human Activity Recognition Weight Lifting data.
+
+# Prediction
+Now we predict the cleaned original test data set with the selected model. 
+
+```{r}
+testingDataPrediction <- predict(fitRF, newdata=cleanedTestData)
+testingDataPrediction
+```
+
+* _Data source:
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. 
+Cited by 2 (Google Scholar)_
